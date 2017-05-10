@@ -406,6 +406,9 @@ int sanity_check_raw_super(struct f2fs_super_block *sb, u64 offset)
 		return -1;
 	}
 
+	if (get_sb(segment_count) > F2FS_MAX_SEGMENT)
+		return -1;
+
 	if (sanity_check_area_boundary(sb, offset))
 		return -1;
 	return 0;
@@ -589,9 +592,14 @@ int get_valid_checkpoint(struct f2fs_sb_info *sbi)
 	unsigned long blk_size = sbi->blocksize;
 	unsigned long long cp1_version = 0, cp2_version = 0, version;
 	unsigned long long cp_start_blk_no;
-	unsigned int cp_blks = 1 + get_sb(cp_payload);
+	unsigned int cp_payload, cp_blks;
 	int ret;
 
+	cp_payload = get_sb(cp_payload);
+	if (cp_payload > F2FS_BLK_ALIGN(MAX_SIT_BITMAP_SIZE))
+		return -EINVAL;
+
+	cp_blks = 1 + cp_payload;
 	sbi->ckpt = malloc(cp_blks * blk_size);
 	if (!sbi->ckpt)
 		return -ENOMEM;
@@ -889,6 +897,8 @@ static void read_compacted_summaries(struct f2fs_sb_info *sbi)
 		else
 			blk_off = curseg->next_blkoff;
 
+		ASSERT(blk_off <= ENTRIES_IN_SUM);
+
 		for (j = 0; j < blk_off; j++) {
 			struct f2fs_summary *s;
 			s = (struct f2fs_summary *)(kaddr + offset);
@@ -1035,6 +1045,9 @@ static void build_curseg(struct f2fs_sb_info *sbi)
 			blk_off = get_cp(cur_node_blkoff[i - CURSEG_HOT_NODE]);
 			segno = get_cp(cur_node_segno[i - CURSEG_HOT_NODE]);
 		}
+		ASSERT(segno < TOTAL_SEGS(sbi));
+		ASSERT(blk_off < DEFAULT_BLOCKS_PER_SEGMENT);
+
 		array[i].segno = segno;
 		array[i].zone = GET_ZONENO_FROM_SEGNO(sbi, segno);
 		array[i].next_segno = NULL_SEGNO;
